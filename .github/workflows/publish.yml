@@ -1,12 +1,12 @@
-name: 'Publish Release'
+name: "publish"
 
 on:
   push:
     branches:
       - release
 
-# Bu workflow release branch'e her push'ta çalışarak GitHub release oluşturacak veya güncelleyecek, 
-# uygulamanızı derleyecek ve artifact'leri release'e yükleyecek.
+# This is the example from the readme.
+# On each push to the `release` branch it will create or update a GitHub release, build your app, and upload the artifacts to the release.
 
 jobs:
   publish-tauri:
@@ -16,72 +16,48 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: 'macos-latest' # Apple Silicon (M1+) Mac'ler için
-            args: '--target aarch64-apple-darwin'
-          - platform: 'macos-latest' # Intel Mac'ler için
-            args: '--target x86_64-apple-darwin'
-          - platform: 'ubuntu-22.04' # Linux için
-            args: ''
-          - platform: 'windows-latest' # Windows için
-            args: ''
+          - platform: "macos-latest" # for Arm based macs (M1 and above).
+            args: "--target aarch64-apple-darwin"
+          - platform: "macos-latest" # for Intel based macs.
+            args: "--target x86_64-apple-darwin"
+          - platform: "ubuntu-22.04" # for Tauri v1 you could replace this with ubuntu-20.04.
+            args: ""
+          - platform: "windows-latest"
+            args: ""
 
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # Tüm geçmişi çek (tag'ler için gerekli)
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 8.x
-          run_install: false
-
-      - name: Setup Node.js
+      - name: setup node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'pnpm'
+          node-version: lts/*
 
-      - name: Install Rust stable
+      - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
+          # Those targets are only used on macos runners so it's in an `if` to slightly speed up windows and linux builds.
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
-      - name: Install Dependencies (Ubuntu)
-        if: matrix.platform == 'ubuntu-22.04'
+      - name: install dependencies (ubuntu only)
+        if: matrix.platform == 'ubuntu-22.04' # This must match the platform value defined above.
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libwebkit2gtk-4.0-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+        # webkitgtk 4.0 is for Tauri v1 - webkitgtk 4.1 is for Tauri v2.
+        # You can remove the one that doesn't apply to your app to speed up the workflow a bit.
 
-      - name: Install Frontend Dependencies
-        run: pnpm install --frozen-lockfile
+      - name: install frontend dependencies
+        run: yarn install # change this to npm, pnpm or bun depending on which one you use.
 
-      - name: Create Release & Build
-        uses: tauri-apps/tauri-action@v0
+      - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: v__VERSION__ # __VERSION__ otomatik olarak app versiyonu ile değiştirilir
-          releaseName: 'AnyAssist v__VERSION__'
-          releaseBody: |
-            ## 🎉 AnyAssist Sürüm __VERSION__
-            
-            ### Yenilikler ve Değişiklikler
-            - Bu sürümdeki yenilik ve değişiklikleri buraya ekleyin.
-            
-            ### İndirme Bağlantıları
-            Kurulum dosyalarını aşağıdaki bağlantılardan indirebilirsiniz:
-            - Windows (x64)
-            - macOS (Intel & Apple Silicon)
-            - Linux (x64)
-            
-            ---
-            *Uygulama içi güncelleme sistemi aktif edildi. Kurulu uygulamanız otomatik olarak güncellenebilir.*
+          tagName: app-v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
+          releaseName: "App v__VERSION__"
+          releaseBody: "See the assets to download this version and install."
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
-          
-      # Güncelleme JSON dosyaları için ayrı bir job eklenebilir

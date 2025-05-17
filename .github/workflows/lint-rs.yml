@@ -47,9 +47,9 @@ jobs:
         run: mkdir dist
 
       - name: Run rustfmt check
-        run: cargo fmt --all -- --check
-        working-directory: src-tauri
+        run: |
+          cd "$GITHUB_WORKSPACE/src-tauri" && cargo fmt --all -- --check
 
       - name: Run clippy check and deny warnings
-        run: cargo clippy --all-targets --all-features -- -D warnings
-        working-directory: src-tauri
+        run: |
+          cd "$GITHUB_WORKSPACE/src-tauri" && cargo clippy --all-targets --all-features -- -D warnings

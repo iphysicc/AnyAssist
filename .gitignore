@@ -1,0 +1,18 @@
+# AnyAssist projesinin OTA deposu için .gitignore dosyası
+# Yalnızca README, LICENSE ve GitHub Workflows dosyalarını izin verir
+
+# Her şeyi gizle
+/*
+
+# İzin verilen dosyalar/dizinler
+!.github/
+!.github/workflows/
+!README.md
+!LICENSE
+
+# .github içindeki diğer dosyaları gizle
+/.github/*
+!/.github/workflows/
+
+# .gitignore dosyasının kendisi
+!.gitignore

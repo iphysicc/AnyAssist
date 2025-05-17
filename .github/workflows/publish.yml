@@ -1,0 +1,87 @@
+name: 'Publish Release'
+
+on:
+  push:
+    branches:
+      - release
+
+# Bu workflow release branch'e her push'ta çalışarak GitHub release oluşturacak veya güncelleyecek, 
+# uygulamanızı derleyecek ve artifact'leri release'e yükleyecek.
+
+jobs:
+  publish-tauri:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-latest' # Apple Silicon (M1+) Mac'ler için
+            args: '--target aarch64-apple-darwin'
+          - platform: 'macos-latest' # Intel Mac'ler için
+            args: '--target x86_64-apple-darwin'
+          - platform: 'ubuntu-22.04' # Linux için
+            args: ''
+          - platform: 'windows-latest' # Windows için
+            args: ''
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Tüm geçmişi çek (tag'ler için gerekli)
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8.x
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Install Dependencies (Ubuntu)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - name: Install Frontend Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Create Release & Build
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: v__VERSION__ # __VERSION__ otomatik olarak app versiyonu ile değiştirilir
+          releaseName: 'AnyAssist v__VERSION__'
+          releaseBody: |
+            ## 🎉 AnyAssist Sürüm __VERSION__
+            
+            ### Yenilikler ve Değişiklikler
+            - Bu sürümdeki yenilik ve değişiklikleri buraya ekleyin.
+            
+            ### İndirme Bağlantıları
+            Kurulum dosyalarını aşağıdaki bağlantılardan indirebilirsiniz:
+            - Windows (x64)
+            - macOS (Intel & Apple Silicon)
+            - Linux (x64)
+            
+            ---
+            *Uygulama içi güncelleme sistemi aktif edildi. Kurulu uygulamanız otomatik olarak güncellenebilir.*
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
+          
+      # Güncelleme JSON dosyaları için ayrı bir job eklenebilir

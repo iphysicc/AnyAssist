@@ -101,6 +101,14 @@ jobs:
       - name: Upload Build Artifacts
         if: steps.find-artifacts.outputs.artifacts_found == 'true'
         run: |
+          # Debug için URL bilgisini yazdır
+          echo "Orijinal Upload URL: ${{ needs.create-release.outputs.release_upload_url }}"
+          
+          # URL'deki {?name,label} bölümünü temizle
+          UPLOAD_URL="${{ needs.create-release.outputs.release_upload_url }}"
+          CLEAN_URL=${UPLOAD_URL%\{*\}}
+          echo "Temizlenmiş URL: $CLEAN_URL"
+          
           while IFS= read -r artifact_path; do
             filename=$(basename "$artifact_path")
             echo "Yükle: $filename"
@@ -110,7 +118,7 @@ jobs:
               -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
               -H "Content-Type: application/octet-stream" \
               --data-binary "@$artifact_path" \
-              "${{ needs.create-release.outputs.release_upload_url }}?name=$filename"
+              "${CLEAN_URL}?name=$filename"
               
             echo "Yüklendi: $filename"
           done < all_artifacts.txt
@@ -158,12 +166,16 @@ jobs:
           
       - name: Upload latest.json to Release
         run: |
+          # URL'deki {?name,label} bölümünü temizle
+          UPLOAD_URL="${{ needs.create-release.outputs.release_upload_url }}"
+          CLEAN_URL=${UPLOAD_URL%\{*\}}
+          
           curl \
             -X POST \
             -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             -H "Content-Type: application/json" \
             --data-binary "@latest.json" \
-            "${{ needs.create-release.outputs.release_upload_url }}?name=latest.json"
+            "${CLEAN_URL}?name=latest.json"
             
       # OTA repo için güncelleme
       - name: Copy to AnyAssist-OTA Repo

@@ -9,6 +9,7 @@
 !.github/workflows/
 !README.md
 !LICENSE
+!.node-version
 
 # .github içindeki diğer dosyaları gizle
 /.github/*

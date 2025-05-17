@@ -21,9 +21,12 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - name: Disable git core.autocrlf on Windows
-        if: matrix.os == 'windows-latest'
-        run: git config --global core.autocrlf false
+      - name: Set git config
+        if: matrix.os == 'windows-latest' || matrix.os == 'macos-latest'
+        shell: bash
+        run: |
+          git config --global core.autocrlf false || true
+          git config --global core.eol lf || true
 
       - name: Checkout repository code
         uses: actions/checkout@v4
@@ -33,10 +36,10 @@ jobs:
         with:
           version: latest
 
-      - name: Set up Node.js v22
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version-file: .node-version
+          node-version: '20'
           cache: "pnpm"
 
       - name: Install dependencies from lockfile

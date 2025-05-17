@@ -14,36 +14,72 @@ on:
 jobs:
   build:
     strategy:
-      fail-fast: true
+      fail-fast: false  # Bir işletim sistemi başarısız olsa bile diğerlerini çalıştır
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
 
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15  # Zaman aşımını sınırla
 
     steps:
-      - name: Set git config
-        if: matrix.os == 'windows-latest' || matrix.os == 'macos-latest'
-        shell: bash
-        run: |
-          git config --global core.autocrlf false || true
-          git config --global core.eol lf || true
-
+      # İlk önce kodu checkout et
       - name: Checkout repository code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1  # Shallow clone - daha hızlı checkout için
+      
+      # Sonra git ayarlarını yap
+      - name: Configure git (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+          
+      - name: Configure git (Unix)
+        if: matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest'
+        shell: bash
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
 
+      # pnpm kurulumu - retry ekle
       - name: Set up pnpm package manager
         uses: pnpm/action-setup@v4
         with:
-          version: latest
+          version: 8.x  # Belirli bir sürüm kullan
+          run_install: false  # install komutunu ayrı çalıştıracağız
 
+      # Node kurulumu - retry ekle
       - name: Set up Node.js
+        id: setup-node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: "pnpm"
+          node-version: '20.19.0'  # Belirli bir sürüm kullan
+          cache: 'pnpm'
+        continue-on-error: true  # İlk denemede başarısız olursa devam et
+        
+      # Başarısız olursa tekrar dene
+      - name: Retry Node.js setup if failed
+        if: steps.setup-node.outcome == 'failure'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19.0'
+          cache: false  # Önbellek sorunlarını engellemek için
 
-      - name: Install dependencies from lockfile
+      # Bağımlılıkları yükle - retry ekle
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile
+        id: install
+        continue-on-error: true
+        
+      - name: Retry installing dependencies if failed
+        if: steps.install.outcome == 'failure'
+        run: |
+          echo "Retrying dependency installation..."
+          rm -rf node_modules || true
+          pnpm install --frozen-lockfile
 
+      # Lint kontrolü
       - name: Run lint step
         run: pnpm lint

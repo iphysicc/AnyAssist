@@ -1,63 +1,200 @@
-name: "publish"
+name: 'Manuel Build Yükle ve Release Oluştur'
 
 on:
   push:
     branches:
       - release
+  workflow_dispatch:  # Manuel tetikleme seçeneği
 
-# This is the example from the readme.
-# On each push to the `release` branch it will create or update a GitHub release, build your app, and upload the artifacts to the release.
+# Bu workflow elle derlenmiş dosyaları build-artifacts klasöründen alır ve GitHub Releases'e ekler
 
 jobs:
-  publish-tauri:
+  create-release:
     permissions:
       contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: "macos-latest" # for Arm based macs (M1 and above).
-            args: "--target aarch64-apple-darwin"
-          - platform: "macos-latest" # for Intel based macs.
-            args: "--target x86_64-apple-darwin"
-          - platform: "ubuntu-22.04" # for Tauri v1 you could replace this with ubuntu-20.04.
-            args: ""
-          - platform: "windows-latest"
-            args: ""
-
-    runs-on: ${{ matrix.platform }}
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create-release.outputs.result.id }}
+      release_upload_url: ${{ steps.create-release.outputs.result.upload_url }}
+      app_version: ${{ steps.app-version.outputs.version }}
+    
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-      - name: setup node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: lts/*
-
-      - name: install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          # Those targets are only used on macos runners so it's in an `if` to slightly speed up windows and linux builds.
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-
-      - name: install dependencies (ubuntu only)
-        if: matrix.platform == 'ubuntu-22.04' # This must match the platform value defined above.
+          node-version: '20'
+      
+      - name: Get App Version
+        id: app-version
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.0-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-        # webkitgtk 4.0 is for Tauri v1 - webkitgtk 4.1 is for Tauri v2.
-        # You can remove the one that doesn't apply to your app to speed up the workflow a bit.
-
-      - name: install frontend dependencies
-        run: yarn install # change this to npm, pnpm or bun depending on which one you use.
-
-      - uses: tauri-apps/tauri-action@v0
+          VERSION=$(grep '"version":' ./package.json | head -1 | awk -F: '{ print $2 }' | sed 's/[", ]//g')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Versiyon: $VERSION"
+      
+      - name: Create Release
+        id: create-release
+        uses: actions/github-script@v7
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.app-version.outputs.version }}
         with:
-          tagName: app-v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
-          releaseName: "App v__VERSION__"
-          releaseBody: "See the assets to download this version and install."
-          releaseDraft: true
-          prerelease: false
-          args: ${{ matrix.args }}
+          result-encoding: string
+          script: |
+            const version = process.env.VERSION;
+            const { data } = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: `v${version}`,
+              name: `🚀 AnyAssist v${version}`,
+              body: [
+                `## 🎉 AnyAssist Sürüm ${version}`,
+                '',
+                '### ✨ Yenilikler',
+                '- Bu sürümün yeniliklerini buraya ekleyin',
+                '',
+                '### 🐛 Hata Düzeltmeleri',
+                '- Düzeltilen hataları buraya ekleyin',
+                '',
+                '### 📦 İndirme Bağlantıları',
+                '- Windows, macOS ve Linux için kurulum dosyaları aşağıda bulunmaktadır.',
+                '',
+                '---',
+                '*Bu güncelleme otomatik olarak uygulamaya bildirilecektir.*'
+              ].join('\n'),
+              draft: true,
+              prerelease: false
+            });
+            return { id: data.id, upload_url: data.upload_url };
+
+  # Build artifacts'leri yükle
+  upload-artifacts:
+    needs: create-release
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      
+      - name: Find Build Artifacts
+        id: find-artifacts
+        run: |
+          echo "Windows Artifacts:"
+          find build-artifacts -name "*.exe" -o -name "*.msi" | tee windows_artifacts.txt
+          
+          # Tüm dosyaları bir listeye ekle
+          find build-artifacts -type f | grep -v "latest.json" > all_artifacts.txt
+          
+          # Dosya sayısını göster
+          COUNT=$(wc -l < all_artifacts.txt)
+          echo "Toplam $COUNT build artifact bulundu."
+          
+          if [ "$COUNT" -eq "0" ]; then
+            echo "UYARI: Dosya bulunamadı! 'build-artifacts' klasöründe kurulum dosyaları bulunamadı."
+            echo "artifacts_found=false" >> $GITHUB_OUTPUT
+          else
+            echo "artifacts_found=true" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Upload Build Artifacts
+        if: steps.find-artifacts.outputs.artifacts_found == 'true'
+        run: |
+          while IFS= read -r artifact_path; do
+            filename=$(basename "$artifact_path")
+            echo "Yükle: $filename"
+            
+            curl \
+              -X POST \
+              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary "@$artifact_path" \
+              "${{ needs.create-release.outputs.release_upload_url }}?name=$filename"
+              
+            echo "Yüklendi: $filename"
+          done < all_artifacts.txt
+      
+      - name: Create latest.json
+        id: create-latest-json
+        run: |
+          VERSION="${{ needs.create-release.outputs.app_version }}"
+          REPO_OWNER="${{ github.repository_owner }}"
+          REPO_NAME="${{ github.event.repository.name }}"
+          
+          # Windows imzasını varsayılan olarak ayarla
+          WINDOWS_SIGNATURE=""
+          WINDOWS_URL=""
+          if [ -f "build-artifacts/windows-signature.txt" ]; then
+            WINDOWS_SIGNATURE=$(cat "build-artifacts/windows-signature.txt")
+          fi
+          
+          # Windows installer URL'sini ayarla
+          WINDOWS_INSTALLER=$(find build-artifacts -name "*_x64-setup.exe" -o -name "*_setup.exe" -o -name "*.exe" | head -1)
+          if [ -n "$WINDOWS_INSTALLER" ]; then
+            INSTALLER_FILENAME=$(basename "$WINDOWS_INSTALLER")
+            WINDOWS_URL="https://github.com/$REPO_OWNER/$REPO_NAME/releases/download/v$VERSION/$INSTALLER_FILENAME"
+          fi
+          
+          # latest.json dosyasını oluştur
+          cat > latest.json << EOF
+          {
+            "version": "$VERSION",
+            "notes": "AnyAssist Sürüm $VERSION - Güncelleme notları için GitHub Releases sayfasını ziyaret edin.",
+            "pub_date": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+            "platforms": {
+              "windows-x86_64": {
+                "signature": "$WINDOWS_SIGNATURE",
+                "url": "$WINDOWS_URL"
+              }
+            }
+          }
+          EOF
+          
+          # Sadece Windows destekleniyor
+          
+          echo "latest.json oluşturuldu:"
+          cat latest.json
+          
+      - name: Upload latest.json to Release
+        run: |
+          curl \
+            -X POST \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            --data-binary "@latest.json" \
+            "${{ needs.create-release.outputs.release_upload_url }}?name=latest.json"
+            
+      # OTA repo için güncelleme
+      - name: Copy to AnyAssist-OTA Repo
+        if: github.ref == 'refs/heads/release'
+        run: |
+          # OTA deposunu klonla
+          git clone https://github.com/${{ github.repository_owner }}/AnyAssist-OTA.git ota-repo
+          
+          # Sürüm tag'ini oluştur
+          VERSION="${{ needs.create-release.outputs.app_version }}"
+          cd ota-repo
+          
+          # Token ile bağlan
+          git remote set-url origin https://x-access-token:${{ secrets.REPO_TOKEN }}@github.com/${{ github.repository_owner }}/AnyAssist-OTA.git
+          
+          # Son durumu çek
+          git pull origin main
+          
+          # latest.json dosyasını kopyala
+          cp ../latest.json .
+          
+          # Değişiklikleri commit'le
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add latest.json
+          git commit -m "Update latest.json to v$VERSION"
+          
+          # Tag oluştur
+          git tag -a "v$VERSION" -m "Release v$VERSION"
+          
+          # Push yap
+          git push origin main
+          git push origin "v$VERSION"
+        continue-on-error: true  # OTA repo yoksa hata vermesin

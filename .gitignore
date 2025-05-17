@@ -10,6 +10,8 @@
 !README.md
 !LICENSE
 !.node-version
+!build-artifacts/
+!package.json
 
 # .github içindeki diğer dosyaları gizle
 /.github/*

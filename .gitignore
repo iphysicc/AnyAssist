@@ -1,21 +1,39 @@
-# AnyAssist projesinin OTA deposu için .gitignore dosyası
-# Yalnızca README, LICENSE ve GitHub Workflows dosyalarını izin verir
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# Her şeyi gizle
-/*
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
 
-# İzin verilen dosyalar/dizinler
-!.github/
-!.github/workflows/
-!README.md
-!LICENSE
-!.node-version
-!build-artifacts/
-!package.json
+# testing
+/coverage
 
-# .github içindeki diğer dosyaları gizle
-/.github/*
-!/.github/workflows/
+# next.js
+/.next/
+/out/
+/dist/
 
-# .gitignore dosyasının kendisi
-!.gitignore
+# production
+/build
+
+# misc
+.DS_Store
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# local env files
+.env*.local
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
